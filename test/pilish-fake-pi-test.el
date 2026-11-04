@@ -902,8 +902,12 @@ SPEC is (SESSION SCENARIO &rest EXTRA-ARGS)."
 (ert-deftest pilish-fake-pi-test-switch-session-roundtrips-branched-v3 ()
   "A switched branched v3 file preserves raw tree and projected history contracts."
   (let ((target-dir
-         (file-name-as-directory
-          (make-temp-file "pilish-fake-pi-branched-" t))))
+         ;; Keep the canonical spelling: the fake resolves the paths it
+         ;; echoes back, and macOS temp directories sit behind a
+         ;; /private symlink.
+         (file-truename
+          (file-name-as-directory
+           (make-temp-file "pilish-fake-pi-branched-" t)))))
     (unwind-protect
         (let* ((fixture
                 (pilish-fake-pi-test--write-branched-v3-session
@@ -1110,8 +1114,9 @@ SPEC is (SESSION SCENARIO &rest EXTRA-ARGS)."
 (ert-deftest pilish-fake-pi-test-switch-failures-are-transactional-and-missing-initializes ()
   "Invalid switches preserve state; a missing absolute target becomes empty v3."
   (let* ((target-dir
-          (file-name-as-directory
-           (make-temp-file "pilish-fake-pi-switch-" t)))
+          (file-truename
+           (file-name-as-directory
+            (make-temp-file "pilish-fake-pi-switch-" t))))
          (malformed-path (expand-file-name "malformed.jsonl" target-dir))
          (missing-path (expand-file-name "new-empty.jsonl" target-dir)))
     (unwind-protect
@@ -1239,8 +1244,9 @@ SPEC is (SESSION SCENARIO &rest EXTRA-ARGS)."
 (ert-deftest pilish-fake-pi-test-resume-selected-session-full-contract ()
   "The retained resume choreography settles and renders fake target history."
   (let* ((target-dir
-          (file-name-as-directory
-           (make-temp-file "pilish-fake-pi-resume-" t)))
+          (file-truename
+           (file-name-as-directory
+            (make-temp-file "pilish-fake-pi-resume-" t))))
          (fixture
           (pilish-fake-pi-test--write-branched-v3-session target-dir))
          (target-path (plist-get fixture :path))
@@ -2522,7 +2528,8 @@ SPEC is (SESSION SCENARIO &rest EXTRA-ARGS)."
 
 (ert-deftest pilish-fake-pi-test-nested-tools-reset-stops-playback ()
   "Abort and session resets join playback even after wire settlement."
-  (let ((target-dir (make-temp-file "pilish-fake-pi-nested-reset-" t)))
+  (let ((target-dir
+         (file-truename (make-temp-file "pilish-fake-pi-nested-reset-" t))))
     (unwind-protect
         (dolist (boundary '("tool_execution_update" "agent_end" "agent_settled"))
           (dolist (command-type '("abort" "new_session" "switch_session"))

@@ -2886,6 +2886,9 @@ validated lexical local identity; remote, UNC, and Windows spellings
 continue to bypass local canonicalization entirely."
   (let* ((base (pilish-test--make-temp-directory "pi-project-handler-"))
          (cwd (expand-file-name "handled/project" base))
+         ;; The canonical spec spells the truenamed cwd; macOS temp
+         ;; directories live behind a /private symlink.
+         (canonical (file-truename cwd))
          (calls 0)
          (handler
           (lambda (operation &rest _args)
@@ -2903,7 +2906,8 @@ continue to bypass local canonicalization entirely."
             (should (equal (pilish--session-canonical-project-spec
                             (pilish-test--project-item
                              "/sessions/local.jsonl" cwd "Handled"))
-                           (list cwd nil (split-string cwd "/" t))))
+                           (list canonical nil
+                                 (split-string canonical "/" t))))
             (should (= calls 0)))
           ;; Result validation is independent of handler inhibition.
           (cl-letf (((symbol-function 'file-truename)
@@ -10340,70 +10344,70 @@ just the session browser (V14)."
 
 (ert-deftest pilish-test-session-fold-threaded-query-round-trip-and-parent ()
   "Threaded family folds persist through flat query results; ^ finds root."
-  (with-temp-buffer
-    (pilish-session-browser-mode)
-    (setq pilish--session-browser-items
-          '((:path "/tmp/pilish-fold-parent.jsonl" :name "Parent"
-             :modified "2026-01-01T00:00:00Z")
-            (:path "/tmp/pilish-fold-child.jsonl" :name "Needle child"
-             :parentSessionPath "/tmp/pilish-fold-parent.jsonl"
-             :modified "2026-01-02T00:00:00Z"))
-          pilish--session-browser-view 'threaded
-          pilish--session-browser-scope 'all)
-    (pilish--session-browser-rerender)
-    (let ((parent (pilish-test--browse-fold-row
-                   "/tmp/pilish-fold-parent.jsonl"))
-          (child (pilish-test--browse-fold-row
-                  "/tmp/pilish-fold-child.jsonl")))
-      (should (eq (plist-get child :parent) parent))
-      (goto-char (oref (plist-get child :section) start))
-      (pilish-browse-goto-parent-row)
-      (should (= (point) (oref (plist-get parent :section) start)))
-      (goto-char (oref (plist-get child :section) start))
-      (pilish-browse-toggle-fold))
-    (should (gethash "/tmp/pilish-fold-parent.jsonl"
-                     pilish--browse-fold-state))
-    (should (equal (pilish-test--browse-gutter
-                    (pilish-test--browse-fold-row-start
-                     "/tmp/pilish-fold-parent.jsonl"))
-                   "▸"))
-    (should (invisible-p
-             (pilish-test--browse-fold-row-start
-              "/tmp/pilish-fold-child.jsonl")))
-    ;; A query deliberately flattens Threaded.  It removes the parent row but
-    ;; not its published identity, so clearing it restores the same fold.
-    (setq pilish--session-browser-search-query "Needle"
-          pilish--session-browser-search-tokens '("Needle"))
-    (pilish--session-browser-rerender)
-    (should (gethash "/tmp/pilish-fold-parent.jsonl"
-                     pilish--browse-fold-state))
-    (should-not (invisible-p
-                 (pilish-test--browse-fold-row-start
-                  "/tmp/pilish-fold-child.jsonl")))
-    (setq pilish--session-browser-search-query nil
-          pilish--session-browser-search-tokens nil)
-    (pilish--session-browser-rerender)
-    (should (invisible-p
-             (pilish-test--browse-fold-row-start
-              "/tmp/pilish-fold-child.jsonl")))))
+  ;; Fold rows key on the canonical `file-truename' spelling, which
+  ;; differs from /tmp on macOS.
+  (let* ((parent-path (file-truename "/tmp/pilish-fold-parent.jsonl"))
+         (child-path (file-truename "/tmp/pilish-fold-child.jsonl")))
+    (with-temp-buffer
+      (pilish-session-browser-mode)
+      (setq pilish--session-browser-items
+            `((:path ,parent-path :name "Parent"
+               :modified "2026-01-01T00:00:00Z")
+              (:path ,child-path :name "Needle child"
+               :parentSessionPath ,parent-path
+               :modified "2026-01-02T00:00:00Z"))
+            pilish--session-browser-view 'threaded
+            pilish--session-browser-scope 'all)
+      (pilish--session-browser-rerender)
+      (let ((parent (pilish-test--browse-fold-row parent-path))
+            (child (pilish-test--browse-fold-row child-path)))
+        (should (eq (plist-get child :parent) parent))
+        (goto-char (oref (plist-get child :section) start))
+        (pilish-browse-goto-parent-row)
+        (should (= (point) (oref (plist-get parent :section) start)))
+        (goto-char (oref (plist-get child :section) start))
+        (pilish-browse-toggle-fold))
+      (should (gethash parent-path pilish--browse-fold-state))
+      (should (equal (pilish-test--browse-gutter
+                      (pilish-test--browse-fold-row-start parent-path))
+                     "▸"))
+      (should (invisible-p
+               (pilish-test--browse-fold-row-start child-path)))
+      ;; A query deliberately flattens Threaded.  It removes the parent row but
+      ;; not its published identity, so clearing it restores the same fold.
+      (setq pilish--session-browser-search-query "Needle"
+            pilish--session-browser-search-tokens '("Needle"))
+      (pilish--session-browser-rerender)
+      (should (gethash parent-path pilish--browse-fold-state))
+      (should-not (invisible-p
+                   (pilish-test--browse-fold-row-start child-path)))
+      (setq pilish--session-browser-search-query nil
+            pilish--session-browser-search-tokens nil)
+      (pilish--session-browser-rerender)
+      (should (invisible-p
+               (pilish-test--browse-fold-row-start child-path))))))
 
 (ert-deftest pilish-test-session-fold-recent-group-and-flat-exclusion ()
   "Recent rows fold their group; Most-messages rows have no false target."
-  (let ((now (encode-time '(0 0 12 18 9 2026 nil nil nil))))
+  (let ((now (encode-time '(0 0 12 18 9 2026 nil nil nil)))
+        ;; Fold rows key on the canonical `file-truename' spelling,
+        ;; which differs from /tmp on macOS.
+        (recent-a (file-truename "/tmp/pilish-recent-a.jsonl"))
+        (recent-b (file-truename "/tmp/pilish-recent-b.jsonl"))
+        (recent-old (file-truename "/tmp/pilish-recent-old.jsonl")))
     (cl-letf (((symbol-function 'current-time) (lambda () now)))
       (with-temp-buffer
         (pilish-session-browser-mode)
         (setq pilish--session-browser-items
-              '((:path "/tmp/pilish-recent-a.jsonl" :name "A"
+              `((:path ,recent-a :name "A"
                  :modified "2026-09-18T10:00:00+02:00")
-                (:path "/tmp/pilish-recent-b.jsonl" :name "B"
+                (:path ,recent-b :name "B"
                  :modified "2026-09-18T09:00:00+02:00")
-                (:path "/tmp/pilish-recent-old.jsonl" :name "Old"
+                (:path ,recent-old :name "Old"
                  :modified "2026-09-17T09:00:00+02:00"))
               pilish--session-browser-view 'recent)
         (pilish--session-browser-rerender)
-        (let ((session (pilish-test--browse-fold-row
-                        "/tmp/pilish-recent-a.jsonl"))
+        (let ((session (pilish-test--browse-fold-row recent-a))
               (today (pilish-test--browse-fold-row "Today"))
               (yesterday (pilish-test--browse-fold-row "Yesterday")))
           (should (= (plist-get today :end)
@@ -10416,13 +10420,11 @@ just the session browser (V14)."
           (pilish-browse-toggle-fold))
         (should (= (point) (pilish-test--browse-fold-row-start "Today")))
         (should (invisible-p
-                 (pilish-test--browse-fold-row-start
-                  "/tmp/pilish-recent-a.jsonl")))
+                 (pilish-test--browse-fold-row-start recent-a)))
         (should-not (invisible-p
                      (pilish-test--browse-fold-row-start "Yesterday")))
         (should-not (invisible-p
-                     (pilish-test--browse-fold-row-start
-                      "/tmp/pilish-recent-old.jsonl")))
+                     (pilish-test--browse-fold-row-start recent-old)))
         (setq pilish--session-browser-view 'messages)
         (pilish--session-browser-rerender)
         (goto-char (point-min))
