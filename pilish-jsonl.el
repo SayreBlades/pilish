@@ -614,6 +614,7 @@ under ROOT."
                (:constructor pilish--jsonl-info-create))
   "Resumable session scan; the decoded buffer's point is its cursor."
   buffer path mtime header name first fallback texts search-text
+  model thinking-level
   (phase 'header) (message-count 0) (parsed-messages 0))
 
 (defun pilish-jsonl-open-session-info (path &optional search-text)
@@ -679,6 +680,23 @@ Keep the legacy preview budget independent of optional full-text parsing."
                   (setf (pilish--jsonl-info-fallback state) text))))
               (when (and search-p (not (string-empty-p text)))
                 (push text (pilish--jsonl-info-texts state)))))))))
+   ((pilish--jsonl-line-type-p "model_change")
+    (when-let* ((data (pilish--jsonl-parse-current-line)))
+      (let ((raw (or (pilish--normalize-string-or-null
+                      (plist-get data :modelId))
+                     (pilish--normalize-string-or-null
+                      (plist-get data :model)))))
+        ;; Latest model_change wins; absent or blank clears.
+        (setf (pilish--jsonl-info-model state)
+              (and raw (not (string-empty-p (string-trim raw)))
+                   (string-trim raw))))))
+   ((pilish--jsonl-line-type-p "thinking_level_change")
+    (when-let* ((data (pilish--jsonl-parse-current-line)))
+      (let ((raw (pilish--normalize-string-or-null
+                  (plist-get data :thinkingLevel))))
+        (setf (pilish--jsonl-info-thinking-level state)
+              (and raw (not (string-empty-p (string-trim raw)))
+                   (string-trim raw))))))
    ((pilish--jsonl-line-type-p "session_info")
     (when-let* ((data (pilish--jsonl-parse-current-line)))
       (let ((raw (pilish--normalize-string-or-null (plist-get data :name))))
@@ -706,6 +724,11 @@ Keep the legacy preview budget independent of optional full-text parsing."
               (when cwd (list :cwd cwd))
               (when name (list :name name))
               (when parent (list :parentSessionPath parent))
+              (when (pilish--jsonl-info-model state)
+                (list :model (pilish--jsonl-info-model state)))
+              (when (pilish--jsonl-info-thinking-level state)
+                (list :thinkingLevel
+                      (pilish--jsonl-info-thinking-level state)))
               (when created (list :created created))
               (list :modified
                     (format-time-string "%Y-%m-%dT%H:%M:%SZ"
@@ -749,7 +772,8 @@ Close STATE after completion or failure; do not step a completed state."
 (defun pilish-jsonl-read-session-info (path &optional search-text)
   "Read session metadata for the file at PATH, without building trees.
 Return a plist in the browse session dialect — (:path :id :cwd :name?
-:parentSessionPath? :created? :modified :messageCount :firstMessage?)
+:parentSessionPath? :model? :thinkingLevel? :created? :modified
+:messageCount :firstMessage?)
 — or nil when PATH is unreadable, empty, lacks a \"session\" header as
 its first nonblank line, or cannot be read at all.  Key parity with
 the session browser is the contract.

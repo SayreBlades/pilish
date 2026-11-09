@@ -2456,5 +2456,28 @@ quadratic nth-per-access version measured 16s+ against."
       ;; well under the budget.  No tighter timing is asserted.
       (should (< elapsed 10)))))
 
+
+(ert-deftest pilish-test-jsonl-session-info-model-and-thinking ()
+  "model_change and thinking_level_change replay latest-wins into metadata."
+  (let* ((dir (make-temp-file "pilish-model-change" t))
+         (path (expand-file-name "session.jsonl" dir)))
+    (unwind-protect
+        (progn
+          (with-temp-file path
+            (insert "{\"type\":\"session\",\"version\":3,"
+                    "\"id\":\"s1\",\"cwd\":\"/tmp/\"}\n")
+            (insert "{\"type\":\"model_change\",\"id\":\"m1\","
+                    "\"provider\":\"zai\",\"modelId\":\"glm-5.3\"}\n")
+            (insert "{\"type\":\"thinking_level_change\",\"id\":\"t1\","
+                    "\"thinkingLevel\":\"high\"}\n")
+            (insert "{\"type\":\"model_change\",\"id\":\"m2\","
+                    "\"provider\":\"kimi\",\"modelId\":\"k3.1-pro\"}\n")
+            (insert "{\"type\":\"thinking_level_change\",\"id\":\"t2\","
+                    "\"thinkingLevel\":\"max\"}\n"))
+          (let ((info (pilish-jsonl-read-session-info path)))
+            (should (equal (plist-get info :model) "k3.1-pro"))
+            (should (equal (plist-get info :thinkingLevel) "max"))))
+      (when (file-directory-p dir) (delete-directory dir t)))))
+
 (provide 'pilish-jsonl-test)
 ;;; pilish-jsonl-test.el ends here
