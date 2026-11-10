@@ -440,19 +440,23 @@ frame, keeps layout unchanged and focuses the input window."
     (pilish--show-session-buffers chat-buf input-buf)))
 
 ;;;###autoload
-(defun pilish-open-session-file (session-file)
+(defun pilish-open-session-file (session-file &optional session)
   "Open pi JSONL SESSION-FILE as a live session.
 This uses the normal chat/input UI and switches pi to SESSION-FILE; it is not a
 static viewer.  The session header must record a non-empty absolute cwd that
 names an existing directory.  Interactively, prompt for an existing file.  In
 Dired, default to the regular file at point; otherwise, default to the current
-visited local regular readable .jsonl file when there is one."
+visited local regular readable .jsonl file when there is one.
+
+With SESSION, open the file in that named Emacs session pair instead of the
+directory's default session, so several saved conversations can be open at
+once without sharing (and clobbering) one pair."
   (interactive (list (pilish--read-session-file-name)))
   (let* ((session-file (pilish--route-preserving-expand-file-name
                         session-file))
          (dir (pilish--session-file-cwd-or-error session-file)))
     (pilish--check-dependencies dir)
-    (let* ((chat-buf (pilish--setup-session dir))
+    (let* ((chat-buf (pilish--setup-session dir session))
            (input-buf (buffer-local-value 'pilish--input-buffer
                                           chat-buf))
            (proc (buffer-local-value 'pilish--process chat-buf)))
